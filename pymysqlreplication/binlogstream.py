@@ -2,6 +2,8 @@
 
 import pymysql
 import struct
+import sys
+import json
 
 from pymysql.constants.COMMAND import COM_BINLOG_DUMP
 from pymysql.cursors import DictCursor
@@ -23,9 +25,13 @@ except ImportError:
     # See: https://github.com/PyMySQL/PyMySQL/pull/261
     COM_BINLOG_DUMP_GTID = 0x1e
 
-# 2013 Connection Lost
+# 1130 ER_HOST_NOT_PRIVILEGED
+# 1227 ER_SPECIFIC_ACCESS_DENIED_ERROR
+# 1236 ER_MASTER_FATAL_ERROR_READING_BINLOG
+# 2003 Can't connect to MySQL server
 # 2006 MySQL server has gone away
-MYSQL_EXPECTED_ERROR_CODES = [2013, 2006]
+# 2013 Connection Lost
+MYSQL_EXPECTED_ERROR_CODES = [1130, 1227, 1236, 2003, 2006, 2013]
 
 
 class BinLogStreamReader(object):
@@ -79,6 +85,7 @@ class BinLogStreamReader(object):
         self.log_pos = log_pos
         self.log_file = log_file
         self.auto_position = auto_position
+        self.hashes = {}
 
     def close(self):
         if self.__connected_stream:
@@ -118,7 +125,17 @@ class BinLogStreamReader(object):
         # flags (2) BINLOG_DUMP_NON_BLOCK (0 or 1)
         # server_id (4) -- server id of this slave
         # log_file (string.EOF) -- filename of the binlog on the master
-        self._stream_connection = pymysql.connect(**self.__connection_settings)
+        try:
+            self._stream_connection = pymysql.connect(**self.__connection_settings)
+        except (pymysql.OperationalError, pymysql.InternalError) as error:
+            code, message = error.args
+            if code in MYSQL_EXPECTED_ERROR_CODES:
+                self.hashes["error_code"] = code
+                self.hashes["message"] = message
+                print(json.dumps(self.hashes, sort_keys = True))
+            else:
+                raise error
+            sys.exit(1)
 
         self.__use_checksum = self.__checksum_enabled()
 
@@ -134,9 +151,23 @@ class BinLogStreamReader(object):
             # valid, if not, get the current position from master
             if self.log_file is None or self.log_pos is None:
                 cur = self._stream_connection.cursor()
-                cur.execute("SHOW MASTER STATUS")
-                self.log_file, self.log_pos = cur.fetchone()[:2]
-                cur.close()
+                try:
+                    cur.execute("SHOW MASTER STATUS")
+                    self.log_file, self.log_pos = cur.fetchone()[:2]
+                except (pymysql.OperationalError, pymysql.InternalError) as error:
+                    code, message = error.args
+                    if code in MYSQL_EXPECTED_ERROR_CODES:
+                        self.hashes["error_code"] = code
+                        self.hashes["message"] = message
+                        print(json.dumps(self.hashes, sort_keys = True))
+                        sys.exit(1)
+                    else:
+                        raise error
+                except TypeError as error:
+                    print("Have you ever enable binlog in server side?")
+                    sys.exit(1)
+                finally:
+                    cur.close()
 
             prelude = struct.pack('<i', len(self.log_file) + 11) \
                 + int2byte(COM_BINLOG_DUMP)
@@ -236,14 +267,23 @@ class BinLogStreamReader(object):
                     pkt = self._stream_connection.read_packet()
                 else:
                     pkt = self._stream_connection._read_packet()
-            except pymysql.OperationalError as error:
+            except (pymysql.OperationalError, pymysql.InternalError) as error:
                 code, message = error.args
                 if code in MYSQL_EXPECTED_ERROR_CODES:
                     self.__connected_stream = False
-                    continue
+                    self.hashes["error_code"] = code
+                    self.hashes["message"] = message
+                    print(json.dumps(self.hashes, sort_keys = True))
+                    #continue
+                    sys.exit(1)
+                else:
+                    raise error
 
             if pkt.is_eof_packet():
-                return None
+                self.hashes["error_code"] = 0
+                self.hashes["message"] = "Got EOF packet"
+                print(json.dumps(self.hashes, sort_keys = True))
+                sys.exit(1)
 
             if not pkt.is_ok_packet():
                 continue
@@ -332,6 +372,9 @@ class BinLogStreamReader(object):
                 code, message = error.args
                 if code in MYSQL_EXPECTED_ERROR_CODES:
                     self.__connected_ctl = False
+                    self.hashes["error_code"] = code
+                    self.hashes["message"] = message
+                    print(json.dumps(self.hashes, sort_keys = True))
                     continue
                 else:
                     raise error
