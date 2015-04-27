@@ -54,6 +54,8 @@ class RowsEvent(BinLogEvent):
         self.number_of_columns = self.packet.read_length_coded_binary()
         self.columns = self.table_map[self.table_id].columns
 
+        self._hashes = {}
+
     def __is_null(self, null_bitmap, position):
         bit = null_bitmap[int(position / 8)]
         if type(bit) is str:
@@ -375,9 +377,11 @@ class RowsEvent(BinLogEvent):
 
     def _dump(self):
         super(RowsEvent, self)._dump()
-        print("Table: %s.%s" % (self.schema, self.table))
-        print("Affected columns: %d" % self.number_of_columns)
-        print("Changed rows: %d" % (len(self.rows)))
+        self._hashes["schema"] = self.schema
+        self._hashes["table"] = self.table
+        self._hashes["number_of_columns"] = self.number_of_columns
+        self._hashes["number_of_rows"] = len(self.rows)
+        return self._hashes
 
     def _fetch_rows(self):
         self.__rows = []
@@ -403,6 +407,7 @@ class DeleteRowsEvent(RowsEvent):
         if self._processed:
             self.columns_present_bitmap = self.packet.read(
                 (self.number_of_columns + 7) / 8)
+        self._hashes = {}
 
     def _fetch_one_row(self):
         row = {}
@@ -412,11 +417,12 @@ class DeleteRowsEvent(RowsEvent):
 
     def _dump(self):
         super(DeleteRowsEvent, self)._dump()
-        print("Values:")
+        h = {}
         for row in self.rows:
-            print("--")
             for key in row["values"]:
-                print("*", key, ":", row["values"][key])
+                h[key] = row["values"][key]
+        self._hashes["deleted"] = h
+        return self._hashes
 
 
 class WriteRowsEvent(RowsEvent):
@@ -431,6 +437,7 @@ class WriteRowsEvent(RowsEvent):
         if self._processed:
             self.columns_present_bitmap = self.packet.read(
                 (self.number_of_columns + 7) / 8)
+        self._hashes = {}
 
     def _fetch_one_row(self):
         row = {}
@@ -440,19 +447,20 @@ class WriteRowsEvent(RowsEvent):
 
     def _dump(self):
         super(WriteRowsEvent, self)._dump()
-        print("Values:")
+        h = {}
         for row in self.rows:
-            print("--")
             for key in row["values"]:
-                print("*", key, ":", row["values"][key])
+                h[key] = row["values"][key]
+        self._hashes["inserted"] = h
+        return self._hashes
 
 
 class UpdateRowsEvent(RowsEvent):
     """This event is triggered when a row in the database is changed
 
     For each row you got a hash with two keys:
-        * before_values
-        * after_values
+        * before
+        * after
 
     Depending of your MySQL configuration the hash can contains the full row or only the changes:
     http://dev.mysql.com/doc/refman/5.6/en/replication-options-binary-log.html#sysvar_binlog_row_image
@@ -467,25 +475,26 @@ class UpdateRowsEvent(RowsEvent):
                 (self.number_of_columns + 7) / 8)
             self.columns_present_bitmap2 = self.packet.read(
                 (self.number_of_columns + 7) / 8)
+        self._hashes = {}
 
     def _fetch_one_row(self):
         row = {}
 
-        row["before_values"] = self._read_column_data(self.columns_present_bitmap)
+        row["before"] = self._read_column_data(self.columns_present_bitmap)
 
-        row["after_values"] = self._read_column_data(self.columns_present_bitmap2)
+        row["after"] = self._read_column_data(self.columns_present_bitmap2)
         return row
 
     def _dump(self):
         super(UpdateRowsEvent, self)._dump()
-        print("Affected columns: %d" % self.number_of_columns)
-        print("Values:")
+        self._hashes["number_of_columns"] = self.number_of_columns
         for row in self.rows:
-            print("--")
-            for key in row["before_values"]:
-                print("*%s:%s=>%s" % (key,
-                                      row["before_values"][key],
-                                      row["after_values"][key]))
+            for key in row["before"]:
+                h = {}
+                h["before"] = {key: row["before"][key]}
+                h["after"] = {key: row["after"][key]}
+        self._hashes["updated"] = h
+        return self._hashes
 
 
 class TableMapEvent(BinLogEvent):
@@ -546,6 +555,7 @@ class TableMapEvent(BinLogEvent):
         self.table_obj = Table(self.column_schemas, self.table_id, self.schema,
                                self.table, self.columns)
 
+        self._hashes = {}
         # TODO: get this information instead of trashing data
         # n              NULL-bitmask, length: (column-length * 8) / 7
 
@@ -554,7 +564,8 @@ class TableMapEvent(BinLogEvent):
 
     def _dump(self):
         super(TableMapEvent, self)._dump()
-        print("Table id: %d" % (self.table_id))
-        print("Schema: %s" % (self.schema))
-        print("Table: %s" % (self.table))
-        print("Columns: %s" % (self.column_count))
+        self._hashes["table_id"] = self.table_id
+        self._hashes["schema"] = self.schema
+        self._hashes["table"] = self.table
+        self._hashes["columns"] = self.column_count
+        return self._hashes

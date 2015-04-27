@@ -49,7 +49,6 @@ class BinLogEvent(object):
         else:
             print(json.dumps(self.hashes, sort_keys = True))
 
-        print()
 
     def _dump(self):
         """Core data dumped for the event"""
