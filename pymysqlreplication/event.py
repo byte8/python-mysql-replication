@@ -7,6 +7,18 @@ import json
 
 from pymysql.util import byte2int, int2byte
 
+def iter_bytes_to_string(hash):
+    if issubclass(hash.__class__, {}.__class__):
+        for key in hash.keys():
+            if not issubclass(hash[key].__class__, {}.__class__):
+                try:
+                    hash[key] = bytes.decode(hash[key])
+                except:
+                    continue
+            else:
+                iter_bytes_to_string(hash[key])
+    return hash
+
 
 class BinLogEvent(object):
     def __init__(self, from_packet, event_size, table_map, ctl_connection,
@@ -47,7 +59,9 @@ class BinLogEvent(object):
             for key in sorted(self.hashes.keys()):
                 print(key, ":", self.hashes[key])
         else:
-            print(json.dumps(self.hashes, sort_keys = True))
+            self.hashes = iter_bytes_to_string(self.hashes)
+            self.hashes = json.dumps(self.hashes, sort_keys = True)
+            print(self.hashes)
 
 
     def _dump(self):
