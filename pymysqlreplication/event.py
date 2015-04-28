@@ -3,7 +3,6 @@
 import struct
 import datetime
 from collections import OrderedDict
-import json
 
 from pymysql.util import byte2int, int2byte
 
@@ -24,8 +23,7 @@ class BinLogEvent(object):
     def __init__(self, from_packet, event_size, table_map, ctl_connection,
                  only_tables = None,
                  only_schemas = None,
-                 freeze_schema = False,
-                 output_type = "json"):
+                 freeze_schema = False):
         self.packet = from_packet
         self.table_map = table_map
         self.event_type = self.packet.event_type
@@ -35,7 +33,6 @@ class BinLogEvent(object):
         # The event have been fully processed, if processed is false
         # the event will be skipped
         self._processed = True
-        self.output_type = output_type
         self.hashes = {}
 
     def _read_table_id(self):
@@ -55,13 +52,12 @@ class BinLogEvent(object):
         if h:
             self.hashes.update(h)
 
-        if self.output_type == "plain":
-            for key in sorted(self.hashes.keys()):
-                print(key, ":", self.hashes[key])
-        else:
-            self.hashes = iter_bytes_to_string(self.hashes)
-            self.hashes = json.dumps(self.hashes, sort_keys = True)
-            print(self.hashes)
+        self.hashes = iter_bytes_to_string(self.hashes)
+        # TODO
+        # put_pos: last put pos of producer
+        # get_pos: last get pos of consumer, get_pos = put_pos
+        # exec_pos: last exec pos of consumer
+        return self.hashes
 
 
     def _dump(self):
@@ -78,7 +74,7 @@ class GtidEvent(BinLogEvent):
         self.commit_flag = byte2int(self.packet.read(1)) == 1
         self.sid = self.packet.read(16)
         self.gno = struct.unpack('<Q', self.packet.read(8))[0]
-        self._hashes = {}
+        self.__hashes = {}
 
     @property
     def gtid(self):
@@ -91,9 +87,9 @@ class GtidEvent(BinLogEvent):
         return gtid
 
     def _dump(self):
-        self._hashes["commit_flag"] = self.commit_flag
-        self._hashes["gtid"] = self.gtid
-        return self._hashes
+        self.__hashes["commit_flag"] = self.commit_flag
+        self.__hashes["gtid"] = self.gtid
+        return self.__hashes
 
     def __repr__(self):
         return '<GtidEvent "%s">' % self.gtid
@@ -111,13 +107,14 @@ class RotateEvent(BinLogEvent):
                                           ctl_connection, **kwargs)
         self.position = struct.unpack('<Q', self.packet.read(8))[0]
         self.next_binlog = self.packet.read(event_size - 8).decode()
-        self._hashes = {}
+        self.__hashes = {}
 
     def dump(self):
-        self._hashes["class"] = self.__class__.__name__
-        self._hashes["position"] = self.position
-        self._hashes["next_binlog"] = self.next_binlog
-        return self._hashes
+        self.__hashes["class"] = self.__class__.__name__
+        self.__hashes["position"] = self.position
+        self.__hashes["next_binlog"] = self.next_binlog
+        self.__hashes["timestamp"] = self.timestamp
+        return self.__hashes
 
 
 class FormatDescriptionEvent(BinLogEvent):
@@ -135,12 +132,12 @@ class XidEvent(BinLogEvent):
         super(XidEvent, self).__init__(from_packet, event_size, table_map,
                                        ctl_connection, **kwargs)
         self.xid = struct.unpack('<Q', self.packet.read(8))[0]
-        self._hashes = {}
+        self.__hashes = {}
 
     def _dump(self):
         super(XidEvent, self)._dump()
-        self._hashes["xid"] = self.xid
-        return self._hashes
+        self.__hashes["xid"] = self.xid
+        return self.__hashes
 
 
 class QueryEvent(BinLogEvent):
@@ -156,7 +153,7 @@ class QueryEvent(BinLogEvent):
         self.schema_length = byte2int(self.packet.read(1))
         self.error_code = self.packet.read_uint16()
         self.status_vars_length = self.packet.read_uint16()
-        self._hashes = {}
+        self.__hashes = {}
 
         # Payload
         self.status_vars = self.packet.read(self.status_vars_length)
@@ -169,10 +166,10 @@ class QueryEvent(BinLogEvent):
 
     def _dump(self):
         super(QueryEvent, self)._dump()
-        self._hashes["schema"] = bytes.decode(self.schema)
-        self._hashes["execution_time"] = self.execution_time
-        self._hashes["query"] = self.query
-        return self._hashes
+        self.__hashes["schema"] = bytes.decode(self.schema)
+        self.__hashes["execution_time"] = self.execution_time
+        self.__hashes["query"] = self.query
+        return self.__hashes
 
 
 class NotImplementedEvent(BinLogEvent):

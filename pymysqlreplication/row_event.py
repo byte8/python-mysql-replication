@@ -54,7 +54,7 @@ class RowsEvent(BinLogEvent):
         self.number_of_columns = self.packet.read_length_coded_binary()
         self.columns = self.table_map[self.table_id].columns
 
-        self._hashes = {}
+        self.__hashes = {}
 
     def __is_null(self, null_bitmap, position):
         bit = null_bitmap[int(position / 8)]
@@ -380,11 +380,11 @@ class RowsEvent(BinLogEvent):
 
     def _dump(self):
         super(RowsEvent, self)._dump()
-        self._hashes["schema"] = self.schema
-        self._hashes["table"] = self.table
-        self._hashes["number_of_columns"] = self.number_of_columns
-        self._hashes["number_of_rows"] = len(self.rows)
-        return self._hashes
+        self.__hashes["schema"] = self.schema
+        self.__hashes["table"] = self.table
+        self.__hashes["number_of_columns"] = self.number_of_columns
+        self.__hashes["number_of_rows"] = len(self.rows)
+        return self.__hashes
 
     def _fetch_rows(self):
         self.__rows = []
@@ -410,7 +410,7 @@ class DeleteRowsEvent(RowsEvent):
         if self._processed:
             self.columns_present_bitmap = self.packet.read(
                 (self.number_of_columns + 7) / 8)
-        self._hashes = {}
+        self.__hashes = {}
 
     def _fetch_one_row(self):
         row = {}
@@ -424,8 +424,8 @@ class DeleteRowsEvent(RowsEvent):
         for row in self.rows:
             for key in row["values"]:
                 h[key] = row["values"][key]
-        self._hashes["deleted"] = h
-        return self._hashes
+        self.__hashes["deleted"] = h
+        return self.__hashes
 
 
 class WriteRowsEvent(RowsEvent):
@@ -440,7 +440,7 @@ class WriteRowsEvent(RowsEvent):
         if self._processed:
             self.columns_present_bitmap = self.packet.read(
                 (self.number_of_columns + 7) / 8)
-        self._hashes = {}
+        self.__hashes = {}
 
     def _fetch_one_row(self):
         row = {}
@@ -454,8 +454,8 @@ class WriteRowsEvent(RowsEvent):
         for row in self.rows:
             for key in row["values"]:
                 h[key] = row["values"][key]
-        self._hashes["inserted"] = h
-        return self._hashes
+        self.__hashes["inserted"] = h
+        return self.__hashes
 
 
 class UpdateRowsEvent(RowsEvent):
@@ -478,7 +478,7 @@ class UpdateRowsEvent(RowsEvent):
                 (self.number_of_columns + 7) / 8)
             self.columns_present_bitmap2 = self.packet.read(
                 (self.number_of_columns + 7) / 8)
-        self._hashes = {}
+        self.__hashes = {}
 
     def _fetch_one_row(self):
         row = {}
@@ -490,14 +490,14 @@ class UpdateRowsEvent(RowsEvent):
 
     def _dump(self):
         super(UpdateRowsEvent, self)._dump()
-        self._hashes["number_of_columns"] = self.number_of_columns
+        self.__hashes["number_of_columns"] = self.number_of_columns
         for row in self.rows:
             for key in row["before"]:
                 h = {}
                 h["before"] = {key: row["before"][key]}
                 h["after"] = {key: row["after"][key]}
-        self._hashes["updated"] = h
-        return self._hashes
+        self.__hashes["updated"] = h
+        return self.__hashes
 
 
 class TableMapEvent(BinLogEvent):
@@ -558,7 +558,7 @@ class TableMapEvent(BinLogEvent):
         self.table_obj = Table(self.column_schemas, self.table_id, self.schema,
                                self.table, self.columns)
 
-        self._hashes = {}
+        self.__hashes = {}
         # TODO: get this information instead of trashing data
         # n              NULL-bitmask, length: (column-length * 8) / 7
 
@@ -567,8 +567,8 @@ class TableMapEvent(BinLogEvent):
 
     def _dump(self):
         super(TableMapEvent, self)._dump()
-        self._hashes["table_id"] = self.table_id
-        self._hashes["schema"] = self.schema
-        self._hashes["table"] = self.table
-        self._hashes["columns"] = self.column_count
-        return self._hashes
+        self.__hashes["table_id"] = self.table_id
+        self.__hashes["schema"] = self.schema
+        self.__hashes["table"] = self.table
+        self.__hashes["columns"] = self.column_count
+        return self.__hashes

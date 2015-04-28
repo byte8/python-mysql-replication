@@ -38,14 +38,14 @@ class BinLogStreamReader(object):
     """Connect to replication stream and read event
     """
 
-    def __init__(self, connection_settings, server_id, resume_stream=False,
-                 blocking=False, only_events=None, log_file=None, log_pos=None,
-                 filter_non_implemented_events=True,
-                 ignored_events=None, auto_position=None,
-                 only_tables=None, only_schemas=None,
-                 freeze_schema=False):
+    def __init__(self, connection_settings):
         """
-        Attributes:
+        connection_settings attributes:
+            host
+            port
+            user
+            password
+            server_id
             resume_stream: Start for event from position or the latest event of
                            binlog or from older available event
             blocking: Read on stream is blocking
@@ -57,34 +57,61 @@ class BinLogStreamReader(object):
             only_tables: An array with the tables you want to watch
             only_schemas: An array with the schemas you want to watch
             freeze_schema: If true do not support ALTER TABLE. It's faster.
+            filter_non_implemented_events
         """
-        self.__connection_settings = connection_settings
+        self.__configs = {"host": "127.0.0.1",
+                          "port": 3306,
+                          "user": "root",
+                          "password": "",
+                          "server_id": 42,
+                          "resume_stream": False,
+                          "blocking": False,
+                          "only_events": None,
+                          "log_file": None,
+                          "log_pos": None,
+                          "ignored_events": None,
+                          "auto_position": None,
+                          "only_tables": None,
+                          "only_schemas": None,
+                          "freeze_schema": False,
+                          "filter_non_implemented_events": True
+                          }
+        self.__configs.update(connection_settings)
+        conn = {}
+        conn["host"] = self.__configs["host"]
+        conn["port"] = self.__configs["port"]
+        conn["user"] = self.__configs["user"]
+        conn["password"] = self.__configs["password"]
+
+        self.__connection_settings = conn
         self.__connection_settings["charset"] = "utf8"
 
         self.__connected_stream = False
         self.__connected_ctl = False
-        self.__resume_stream = resume_stream
-        self.__blocking = blocking
+        self.__resume_stream = self.__configs["resume_stream"]
+        self.__blocking = self.__configs["blocking"]
 
-        self.__only_tables = only_tables
-        self.__only_schemas = only_schemas
-        self.__freeze_schema = freeze_schema
+        self.__only_tables = self.__configs["only_tables"]
+        self.__only_schemas = self.__configs["only_schemas"]
+        self.__freeze_schema = self.__configs["freeze_schema"]
         self.__allowed_events = self._allowed_event_list(
-            only_events, ignored_events, filter_non_implemented_events)
+            self.__configs["only_events"],
+            self.__configs["ignored_events"],
+            self.__configs["filter_non_implemented_events"])
 
         # We can't filter on packet level TABLE_MAP and rotate event because
         # we need them for handling other operations
         self.__allowed_events_in_packet = frozenset(
             [TableMapEvent, RotateEvent]).union(self.__allowed_events)
 
-        self.__server_id = server_id
+        self.__server_id = self.__configs["server_id"]
         self.__use_checksum = False
 
         # Store table meta information
         self.table_map = {}
-        self.log_pos = log_pos
-        self.log_file = log_file
-        self.auto_position = auto_position
+        self.log_pos = self.__configs["log_pos"]
+        self.log_file = self.__configs["log_file"]
+        self.auto_position = self.__configs["auto_position"]
         self.hashes = {}
 
     def close(self):
@@ -274,7 +301,6 @@ class BinLogStreamReader(object):
                     self.hashes["error_code"] = code
                     self.hashes["message"] = message
                     print(json.dumps(self.hashes, sort_keys = True))
-                    #continue
                     sys.exit(1)
                 else:
                     raise error
