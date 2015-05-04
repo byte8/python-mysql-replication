@@ -5,3 +5,6 @@
 * Support binlog_row_image=minimal or binlog_row_image=noblob
 * Raise exception if too much connection lost
 * Test log file change
+
+* Enable STOP_EVENT
+* Fix schema filters for ROTATE_EVENT and FORMATE_DESCRIPTION_EVENT

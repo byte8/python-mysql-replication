@@ -29,6 +29,7 @@ class BinLogEvent(object):
         self.event_type = self.packet.event_type
         self.timestamp = self.packet.timestamp
         self.event_size = event_size
+        self.log_pos = self.packet.log_pos
         self._ctl_connection = ctl_connection
         # The event have been fully processed, if processed is false
         # the event will be skipped
@@ -47,6 +48,7 @@ class BinLogEvent(object):
         self.hashes["log_pos"] = self.packet.log_pos
         self.hashes["event_size"] = self.event_size
         self.hashes["read_bytes"] = self.packet.read_bytes
+        self.hashes["flags"] = self.packet.flags
 
         h = self._dump()
         if h:
@@ -131,6 +133,9 @@ class XidEvent(BinLogEvent):
     def __init__(self, from_packet, event_size, table_map, ctl_connection, **kwargs):
         super(XidEvent, self).__init__(from_packet, event_size, table_map,
                                        ctl_connection, **kwargs)
+        # TODO
+        self.__only_schemas = kwargs["only_schemas"]
+        #self.schema = struct.unpack(, self.packet.read())
         self.xid = struct.unpack('<Q', self.packet.read(8))[0]
         self.__hashes = {}
 
@@ -147,13 +152,14 @@ class QueryEvent(BinLogEvent):
         super(QueryEvent, self).__init__(from_packet, event_size, table_map,
                                          ctl_connection, **kwargs)
 
+        self.__only_schemas = kwargs["only_schemas"]
+
         # Post-header
         self.slave_proxy_id = self.packet.read_uint32()
         self.execution_time = self.packet.read_uint32()
         self.schema_length = byte2int(self.packet.read(1))
         self.error_code = self.packet.read_uint16()
         self.status_vars_length = self.packet.read_uint16()
-        self.__hashes = {}
 
         # Payload
         self.status_vars = self.packet.read(self.status_vars_length)
@@ -163,6 +169,7 @@ class QueryEvent(BinLogEvent):
         self.query = self.packet.read(event_size - 13 - self.status_vars_length
                                       - self.schema_length - 1).decode("utf-8")
         #string[EOF]    query
+        self.__hashes = {}
 
     def _dump(self):
         super(QueryEvent, self)._dump()

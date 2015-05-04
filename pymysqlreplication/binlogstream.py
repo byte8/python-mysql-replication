@@ -191,7 +191,7 @@ class BinLogStreamReader(object):
                     else:
                         raise error
                 except TypeError as error:
-                    print("Have you ever enable binlog in server side?")
+                    print("Have you ever enabled binlog in server side?")
                     sys.exit(1)
                 finally:
                     cur.close()
@@ -327,7 +327,8 @@ class BinLogStreamReader(object):
                 self.table_map[binlog_event.event.table_id] = \
                     binlog_event.event.get_table()
 
-            if binlog_event.event_type == ROTATE_EVENT:
+            if binlog_event.event_type == ROTATE_EVENT and \
+                    binlog_event.event is not None:
                 self.log_pos = binlog_event.event.position
                 self.log_file = binlog_event.event.next_binlog
                 # Table Id in binlog are NOT persistent in MySQL - they are in-memory identifiers
